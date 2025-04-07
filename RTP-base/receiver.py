@@ -4,7 +4,7 @@ import socket
 from utils import PacketHeader, compute_checksum, PACKET_TYPE
 
 
-class UDPReceiver:
+class RTPReceiver:
     def __init__(self, receiver_ip, receiver_port, window_size):
         """
         Initialize the UDP receiver.
@@ -21,6 +21,7 @@ class UDPReceiver:
         self.current_sender_ip = None
         self.current_sender_port = None
         self.expect_next = 1
+        self.current_mes = ''
 
     def start(self):
         while True:
@@ -34,16 +35,22 @@ class UDPReceiver:
             match pkt_header.type:
                 case PACKET_TYPE.START:
                     if not self.is_initialized:
-                        self.is_initialized = True
-                        self.current_sender_ip = address[0]
-                        self.current_sender_port = address[1]
                         print(f"Received START packet from {address[0]}:{address[1]}")
-                        print(
-                            f"Connected to sender {self.current_sender_ip}:{self.current_sender_port}")
+                        if self._compare_checksum(msg, pkt_header):
+                            print("Checksum verified")
+                            self.is_initialized = True
+                            self.current_sender_ip = address[0]
+                            self.current_sender_port = address[1]
+                            print(
+                                f"Connected to sender {self.current_sender_ip}:{self.current_sender_port}")
+                        else:
+                            print("Checksum verification failed")
+                            continue
 
                         # Send ACK for START packet
                         self._send_ack(self.expect_next)
                         print("Sent ACK for START packet")
+
                     elif (address[0] == self.current_sender_ip and
                           address[1] == self.current_sender_port):
                         print("Received duplicate START packet from the same sender")
@@ -53,11 +60,36 @@ class UDPReceiver:
                         print(f"Received START packet from {address[0]}:{address[1]}")
                         print("Ignored this START packet as receiver is already initialized")
 
-                case PACKET_TYPE.END:
-                    print("Received END packet")
-                    # Send ACK for END packet
-                    self._send_ack(0)  # Dummy seq_num
-                    break
+                case PACKET_TYPE.DATA:
+                    if self.is_initialized:
+                        print(
+                            f"Received DATA packet {pkt_header.seq_num} from {address[0]}:{address[1]}")
+                        print(f"Packet length: {pkt_header.length}")
+                        print(f'message: {msg}')
+                        if self._compare_checksum(msg, pkt_header):
+                            print("Checksum verified")
+                            if pkt_header.seq_num == self.expect_next:
+                                print(f"Packet {self.expect_next} received in order")
+                                self.current_mes += msg.decode('utf-8')
+                                print('Current message:', self.current_mes)
+                                self.expect_next += 1
+                                # Send ACK for the received packet
+                                self._send_ack(self.expect_next)
+                                print(f"Sent ACK for packet {pkt_header.seq_num}")
+                            elif pkt_header.seq_num > self.expect_next:
+                                print(
+                                    f"Packet {pkt_header.seq_num} received out of order, expected {self.expect_next}")
+                                # Send ACK for the last in-order packet
+                                self._send_ack(self.expect_next)
+                            else:
+                                print(
+                                    f"Packet {pkt_header.seq_num} already received")
+                                # Send ACK for the last in-order packet
+                                self._send_ack(self.expect_next)
+                        else:
+                            print("Checksum verification failed")
+                    else:
+                        print("Receiver not initialized, ignoring DATA packet")
 
     def _send_ack(self, seq_num):
         ack_packet = PacketHeader(type=PACKET_TYPE.ACK, seq_num=seq_num, length=0)
@@ -87,7 +119,7 @@ def main():
     )
     args = parser.parse_args()
 
-    UDPReceiver(args.receiver_ip, args.receiver_port, args.window_size).start()
+    RTPReceiver(args.receiver_ip, args.receiver_port, args.window_size).start()
 
 
 if __name__ == "__main__":
