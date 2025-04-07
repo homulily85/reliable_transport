@@ -91,6 +91,22 @@ class RTPReceiver:
                     else:
                         print("Receiver not initialized, ignoring DATA packet")
 
+                case PACKET_TYPE.END:
+                    if self.is_initialized:
+                        print(f"Received END packet from {address[0]}:{address[1]}")
+                        if self._compare_checksum(msg, pkt_header):
+                            print("Checksum verified")
+                            print("Sending ACK for END packet")
+                            self._send_ack(self.expect_next)
+                            print("End of transmission")
+                            self.is_initialized = False
+                            self.socket.close()
+                            return
+                        else:
+                            print("Checksum verification failed")
+                    else:
+                        print("Receiver not initialized, ignoring END packet")
+
     def _send_ack(self, seq_num):
         ack_packet = PacketHeader(type=PACKET_TYPE.ACK, seq_num=seq_num, length=0)
         ack_packet.checksum = compute_checksum(ack_packet / b'')

@@ -21,6 +21,7 @@ class RTPSender:
         self.timeout = 0.5
         self.base_seq_num = 0
         self.packet_count = 1
+        self.is_initialized = False
         self.buffer = {}
         self.shared_dict = multiprocessing.Manager().dict()
         self._send_start_packet()
@@ -28,7 +29,6 @@ class RTPSender:
     def _send_start_packet(self):
         """
         Send a START packet to the receiver and wait for an ACK.
-        This is a blocking call.
         The function will return when an ACK packet is received.
         :return: None
         """
@@ -47,6 +47,7 @@ class RTPSender:
                 self.base_seq_num = self.shared_dict["newest_ack"]
                 if self.base_seq_num == self.packet_count:
                     print("ACK received for START packet")
+                    self.is_initialized = True
                     break
                 else:
                     print("ACK not received for START packet, resending")
@@ -58,10 +59,12 @@ class RTPSender:
         Send a message to the receiver.
         :param message: The message to be sent.
         """
+        if not self.is_initialized:
+            raise Exception("Sender is not initialized. Please call start() method first.")
         # Encoding the message to bytes
         message_byte = message.encode('utf-8')
         # Split the message into chunks of size 1456 bytes
-        chunks = [message_byte[i:i + 1] for i in range(0, len(message), 1)]
+        chunks = [message_byte[i:i + 1456] for i in range(0, len(message), 1456)]
         # Send the chunks
         while True:
             if len(chunks) == 0 and len(self.buffer) == 0:
@@ -95,7 +98,37 @@ class RTPSender:
                 print("ACK not received, resending packets")
 
     def close_connection(self):
-        pass
+        """
+        Close the RTP connection.
+        """
+        # Send a FIN packet to the receiver
+        end_packet = PacketHeader(type=PACKET_TYPE.END, seq_num=self.packet_count, length=0)
+        end_packet.checksum = compute_checksum(end_packet / b'')
+        end_packet = end_packet / b''
+        failed_count = 0
+        while failed_count < 3:
+            self.socket.sendto(bytes(end_packet), (self.receiver_ip, self.receiver_port))
+            print("Sent END packet")
+            print("Waiting for ACK for END packet")
+            p = multiprocessing.Process(target=self._wait_for_ack, args=())
+            p.start()
+            p.join(self.timeout)
+            p.terminate()
+            if len(self.shared_dict) > 0:
+                self.base_seq_num = self.shared_dict["newest_ack"]
+                print("ACK received for END packet")
+                self.socket.close()
+                self.is_initialized = False
+                break
+            else:
+                print("ACK not received for END packet, resending")
+                failed_count += 1
+
+        else:
+            print("Failed to receive ACK for END packet after 3 attempts")
+            print("Closing connection")
+            self.socket.close()
+            self.is_initialized = False
 
     def _create_packet(self, chunk):
         """
@@ -158,6 +191,7 @@ def main():
 
     sender = RTPSender(args.receiver_ip, args.receiver_port, args.window_size)
     sender.send(message)
+    sender.close_connection()
 
 
 if __name__ == "__main__":
