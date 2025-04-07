@@ -9,7 +9,7 @@ from utils import PacketHeader, PACKET_TYPE, compute_checksum
 class RTPSender:
     def __init__(self, receiver_ip, receiver_port, window_size):
         """
-        Initialize the UDP sender.
+        Initialize the RTP sender.
         :param receiver_ip: The IP address of the receiver.
         :param receiver_port: The port number on which the receiver is listening.
         :param window_size: The maximum number of outstanding packets.
@@ -30,7 +30,6 @@ class RTPSender:
         """
         Send a START packet to the receiver and wait for an ACK.
         The function will return when an ACK packet is received.
-        :return: None
         """
         start_packet = PacketHeader(type=PACKET_TYPE.START, seq_num=self.base_seq_num, length=0)
         start_packet.checksum = compute_checksum(start_packet / b'')
@@ -64,7 +63,7 @@ class RTPSender:
         # Encoding the message to bytes
         message_byte = message.encode('utf-8')
         # Split the message into chunks of size 1456 bytes
-        chunks = [message_byte[i:i + 1456] for i in range(0, len(message), 1456)]
+        chunks = [message_byte[i:i + 68] for i in range(0, len(message), 68)]
         # Send the chunks
         while True:
             if len(chunks) == 0 and len(self.buffer) == 0:
@@ -108,21 +107,24 @@ class RTPSender:
         failed_count = 0
         while failed_count < 3:
             self.socket.sendto(bytes(end_packet), (self.receiver_ip, self.receiver_port))
+            self.packet_count += 1
             print("Sent END packet")
             print("Waiting for ACK for END packet")
             p = multiprocessing.Process(target=self._wait_for_ack, args=())
             p.start()
             p.join(self.timeout)
             p.terminate()
+            failed_count += 1
             if len(self.shared_dict) > 0:
                 self.base_seq_num = self.shared_dict["newest_ack"]
-                print("ACK received for END packet")
-                self.socket.close()
-                self.is_initialized = False
-                break
+                if self.base_seq_num == self.packet_count:
+                    print("ACK received for END packet")
+                    self.socket.close()
+                    self.is_initialized = False
+                    break
+
             else:
                 print("ACK not received for END packet, resending")
-                failed_count += 1
 
         else:
             print("Failed to receive ACK for END packet after 3 attempts")
@@ -160,6 +162,11 @@ class RTPSender:
 
     @staticmethod
     def _compare_checksum(msg, pkt_header):
+        """
+        Compare the checksum of the packet with the computed checksum.
+        :param msg: The message to be sent.
+        :param pkt_header: The packet header.
+        """
         pkt_checksum = pkt_header.checksum
         pkt_header.checksum = 0
         computed_checksum = compute_checksum(pkt_header / msg)
