@@ -122,6 +122,8 @@ class RTPReceiver:
                             self._send_ack(self.expect_next)
                             print("End of transmission")
                             self.is_initialized = False
+                            self.current_sender_ip = None
+                            self.current_sender_port = None
                             self.socket.close()
                             print("Message received:", self.current_mes)
                             return

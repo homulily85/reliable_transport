@@ -63,7 +63,7 @@ class RTPSender:
         # Encoding the message to bytes
         message_byte = message.encode('utf-8')
         # Split the message into chunks of size 1456 bytes
-        chunks = [message_byte[i:i + 68] for i in range(0, len(message), 68)]
+        chunks = [message_byte[i:i + 1456] for i in range(0, len(message), 1456)]
         # Send the chunks
         while True:
             if len(chunks) == 0 and len(self.buffer) == 0:

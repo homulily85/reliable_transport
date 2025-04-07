@@ -2,6 +2,11 @@ import binascii
 
 from scapy.all import Packet, IntField
 
+class PACKET_TYPE:
+    START = 0
+    END = 1
+    DATA = 2
+    ACK = 3
 
 class PacketHeader(Packet):
     name = "PacketHeader"

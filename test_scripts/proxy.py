@@ -96,7 +96,7 @@ def main():
             print(f"Got it: Jam. {pkt_type}: {seq_num}")
             to_socket.sendto(pkt, (to_addr, to_port))
 
-        if  random.randint(1, 100) > 20:
+        if start_stage < 10 or random.randint(1, 100) > 20:
             pkt, address = from_socket.recvfrom(2048, socket.MSG_DONTWAIT)
             if address[1] != receiver_port and address[1] != bind_port:
                 sender_port.pop(0)
